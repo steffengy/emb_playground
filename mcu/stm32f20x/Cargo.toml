@@ -1,0 +1,18 @@
+[package]
+description = "STM32F20X microcontrollers"
+keywords = ["no-std", "arm", "cortex-m", "stm32"]
+license = "MIT OR Apache-2.0"
+name = "mcu_stm32f20x"
+version = "0.1.0"
+
+[dependencies]
+cortex-m = "0.3.0"
+stm32f439x = { version = "0.1.0", path = "./peripherals", features = ["rt"] }
+stm32f20x_clk_plugin = { version = "0.1.0", path = "./clk_plugin" }
+
+[dependencies.cortex-m-rt]
+features = ["abort-on-panic"]
+version = "0.3.3"
+
+[lib]
+path="lib.rs"

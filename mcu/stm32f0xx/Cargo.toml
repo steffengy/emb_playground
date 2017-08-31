@@ -1,0 +1,16 @@
+[package]
+description = "STM32F0XX microcontrollers"
+keywords = ["no-std", "arm", "cortex-m", "stm32"]
+license = "MIT OR Apache-2.0"
+name = "mcu_stm32f0xx"
+version = "0.1.0"
+
+[dependencies]
+stm32f0xx = { version = "0.1", path = "./peripherals", features = ["rt"] }
+
+[dependencies.cortex-m-rt]
+features = ["abort-on-panic"]
+version = "0.3.3"
+
+[lib]
+path="lib.rs"

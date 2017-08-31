@@ -1,0 +1,12 @@
+[package]
+description = "Flexperiment Mini Board"
+keywords = ["no-std", "stm32"]
+license = "MIT OR Apache-2.0"
+name = "board_flexperiment_mini"
+version = "0.1.0"
+
+[dependencies]
+mcu_stm32f20x = { version = "0.1", path = "../../mcu/stm32f20x" }
+
+[lib]
+path="lib.rs"

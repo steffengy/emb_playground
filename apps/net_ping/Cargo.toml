@@ -1,0 +1,15 @@
+[package]
+categories = ["embedded", "no-std"]
+keywords = ["arm", "no-std"]
+license = "MIT OR Apache-2.0"
+name = "net-ping"
+version = "0.1.0"
+build = "../../build.rs"
+
+[dependencies]
+board = { version = "0.1", path = "../../" }
+smoltcp = { version = "0.4.0-pre", default-features = false, features = [] }
+
+[[bin]]
+name = "blink"
+path = "main.rs"

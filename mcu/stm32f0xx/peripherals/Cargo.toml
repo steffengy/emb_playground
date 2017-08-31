@@ -1,0 +1,21 @@
+[package]
+description = "Peripheral access API for STM32F0XX microcontrollers"
+keywords = ["no-std", "arm", "cortex-m", "stm32"]
+license = "MIT OR Apache-2.0"
+name = "stm32f0xx"
+version = "0.1.0"
+
+[dependencies]
+cortex-m = "0.3.0"
+bare-metal = "0.1.0"
+vcell = "0.1.0"
+
+[dependencies.cortex-m-rt]
+optional = true
+version = "0.3.0"
+
+[features]
+rt = ["cortex-m-rt"]
+
+[lib]
+path = "lib.rs"

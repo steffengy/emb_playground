@@ -1,0 +1,10 @@
+[package]
+name = "stm32f20x_clk_plugin"
+version = "0.1.0"
+authors = ["Steffen <steffen.butzer@outlook.com>"]
+
+[dependencies]
+
+[lib]
+proc-macro = true
+path = "lib.rs"

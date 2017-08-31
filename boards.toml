@@ -1,0 +1,7 @@
+[soc]
+STM32F2XXXB = { arch = "thumbv7m-none-eabi", flash = "128K", ram = "64K" }
+STM32F2XXXE = { arch = "thumbv7m-none-eabi", flash = "512K", ram = "128K" }
+
+[board]
+flexperiment_mini = { soc = "STM32F2XXXB" }
+netboard = { soc = "STM32F2XXXE" }

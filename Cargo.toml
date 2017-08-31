@@ -1,21 +1,32 @@
+[workspace]
+members = [
+    "apps/*",
+    "boards/**",
+    "mcu/*",
+    "macros/config_procmacro",
+]
+
 [package]
-authors = ["Jorge Aparicio <jorge@japaric.io>"]
 categories = ["embedded", "no-std"]
-description = "A template for building applications for ARM Cortex-M microcontrollers"
-keywords = ["arm", "cortex-m", "template"]
+description = "A microcontroller firmware"
+keywords = ["arm"]
 license = "MIT OR Apache-2.0"
-name = "cortex-m-quickstart"
-repository = "https://github.com/japaric/cortex-m-quickstart"
-version = "0.2.1"
+name = "board"
+version = "0.1.0"
 
 [dependencies]
-cortex-m = "0.3.0"
-cortex-m-semihosting = "0.2.0"
+hal = { version = "0.1", path = "./hal" }
+board_flexperiment_mini = { version = "0.1", path = "./boards/flexperiment_mini", optional = true }
+board_flexperiment_nano = { version = "0.1", path = "./boards/flexperiment_nano", optional = true }
+board_netboard = { version = "0.1", path = "./boards/netboard", optional = true }
 
-[dependencies.cortex-m-rt]
-features = ["abort-on-panic"]
-version = "0.3.3"
+[lib]
+path = "board.rs"
 
 [profile.release]
-debug = true
+## DIE error GDB debug = true
 lto = true
+
+# Until smoltcp 0.4 lands
+[patch.crates-io]
+smoltcp = { git = "https://github.com/m-labs/smoltcp" }
