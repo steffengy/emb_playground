@@ -3,7 +3,6 @@ members = [
     "apps/*",
     "boards/**",
     "mcu/*",
-    "macros/config_procmacro",
 ]
 
 [package]
@@ -26,7 +25,3 @@ path = "board.rs"
 [profile.release]
 ## DIE error GDB debug = true
 lto = true
-
-# Until smoltcp 0.4 lands
-[patch.crates-io]
-smoltcp = { git = "https://github.com/m-labs/smoltcp" }

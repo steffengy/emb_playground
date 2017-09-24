@@ -1,6 +1,6 @@
 //! This exposes a network stack that sends a UDP packet and can be pinged
 //! TODO: some of this netstack needs to be refactored & moved into the stm32f2xxx crate
-//!        also we need to support dynamic allocation in transmit & receive for sizes bigger than one DMA buffer
+//! TODO: support dynamic allocation in transmit & receive for sizes bigger than one DMA buffer
 //! TODO: interrupt driven
 #![feature(asm, use_extern_macros)]
 #![no_std]
@@ -17,7 +17,7 @@ use board::imp::rcc::Clock;
 use smoltcp::Error;
 use smoltcp::wire::EthernetAddress;
 use smoltcp::iface::{ArpCache, SliceArpCache, EthernetInterface};
-use smoltcp::phy::{Device, DeviceLimits};
+use smoltcp::phy::{Checksum, ChecksumCaps, Device, DeviceCapabilities};
 use smoltcp::socket::{AsSocket, UdpSocket, UdpSocketBuffer, UdpPacketBuffer, SocketSet};
 use smoltcp::wire::{IpAddress, Ipv4Address, IpEndpoint};
 
@@ -165,7 +165,6 @@ impl TxDescEnhanced {
     /// Returns whether this descriptor is currently owned by the DMA
     #[inline]
     fn is_owned(&self) -> bool {
-        //self.flags1 & (1 << 31) > 0
         unsafe {
             core::ptr::read_volatile(&self.flags1) & (1 << 31) > 0
         }
@@ -273,14 +272,19 @@ impl RxDescEnhanced {
     }
 
     #[inline]
+    fn fl(&self) -> usize {
+        ((self.flags1 >> 16) & (1 << 13) - 1) as usize - 4
+    }
+
+    /// Get the rx_buffer based on the set address and the length set in FL
+    #[inline]
     unsafe fn rx_buf(&self) -> &[u8] {
-        // TODO: this & rx_buf_mut gets rx_buf using FL which only works for FS & LS
-        slice::from_raw_parts(self.addr as *mut _, ((self.flags1 >> 16) & (1 << 13) - 1) as usize  - 4)
+        slice::from_raw_parts(self.addr as *mut _, self.fl())
     }
 
     #[inline]
     unsafe fn rx_buf_mut(&self) -> &mut [u8] {
-        slice::from_raw_parts_mut(self.addr as *mut _, ((self.flags1 >> 16) & (1 << 13) - 1) as usize  - 4)
+        slice::from_raw_parts_mut(self.addr as *mut _, self.fl())
     }
 
     #[inline]
@@ -321,7 +325,7 @@ impl EthernetDevice {
             let next_descr = self.tx_descs.get(i + 1).unwrap_or(&self.tx_descs[0]) as *const _;
             self.tx_descs[i]
                 .set_tch(true)
-                .set_cic(ChecksumInsertCtrl::HeaderCalc)
+                .set_cic(ChecksumInsertCtrl::HeaderAndPayloadCalc)
                 .set_tx_buf(&self.tx_bufs[i])
                 .set_next_descr(next_descr);
         }
@@ -378,14 +382,14 @@ impl EthernetDevice {
             while eth_dma.dmaomr.read().ftf().bit_is_set() {}
 
             eth_mac.maccr.modify(|_, w| w.te().set_bit()
-                                        .re().set_bit());
+                                         .re().set_bit());
         
             eth_dma.dmaomr.modify(|_, w| w.st().set_bit()
-                                        .sr().set_bit());
+                                          .sr().set_bit());
             eth_dma.dmaier.modify(|_, w| w.nise().set_bit()
-                                        .aise().set_bit()
-                                        .rbuie().set_bit()
-                                        .rie().set_bit());
+                                          .aise().set_bit()
+                                          .rbuie().set_bit()
+                                          .rie().set_bit());
 
             Clock::EthMac.disable(cs);
             Clock::EthMacTx.disable(cs);
@@ -412,7 +416,7 @@ impl EthernetDevice {
     }
 }
 
-struct TxBuffer(*mut [TxDescEnhanced], usize);
+struct TxBuffer(*mut TxDescEnhanced);
 
 impl AsRef<[u8]> for TxBuffer {
     fn as_ref(&self) -> &[u8] {
@@ -467,6 +471,7 @@ impl AsMut<[u8]> for RxBuffer {
 impl Drop for RxBuffer {
     fn drop(&mut self) {
         let desc = unsafe { &mut *self.0 };
+        // return the rx buffer back to the DMA after it is not used by us anymore
         desc.set_owned(true);
     }
 }
@@ -475,10 +480,18 @@ impl Device for EthernetDevice {
     type RxBuffer = RxBuffer;
     type TxBuffer = TxBuffer;
 
-    fn limits(&self) -> DeviceLimits {
-        let mut limits = DeviceLimits::default();
+    fn capabilities(&self) -> DeviceCapabilities {
+        let mut limits = DeviceCapabilities::default();
         limits.max_transmission_unit = 576;
         limits.max_burst_size = Some(BUFFER_SIZE);
+
+        // enable hardware based checksums
+        let mut checksum = ChecksumCaps::default();
+        checksum.ipv4 = Checksum::None;
+        checksum.udp = Checksum::None;
+        checksum.tcp = Checksum::None;
+        checksum.icmpv4 = Checksum::None;
+        limits.checksum = checksum;
         limits
     }
 
@@ -494,7 +507,7 @@ impl Device for EthernetDevice {
         self.rx_next = (self.rx_next + 1) % self.rx_bufs.len();
 
         if !rx_desc.is_fs() || !rx_desc.is_ls() {
-            // TODO:
+            // TODO: how to receive if > rxbuf.len()? even heap allocated impossible?
             return Err(Error::Exhausted);
         }
 
@@ -502,32 +515,18 @@ impl Device for EthernetDevice {
     }
 
     fn transmit(&mut self, _timestamp: u64, length: usize) -> Result<Self::TxBuffer, Error> {
-        let bufs = self.tx_descs.len();
-        let buf_len = self.tx_bufs[0].len();
-        
-        let required_bufs = (length / buf_len) + (length % buf_len) > 0 as usize;
-
         // check if the required descriptors are owned
         let idx = self.tx_next;
-        let last_idx = self.tx_next + required_bufs;
-        for i in idx..last_idx {
-            let desc = &self.tx_descs[i % bufs];
-            if desc.is_owned() || desc.tx_buf_len() == 0 {
-                return Err(Error::Exhausted);
-            }
+        let desc = &mut self.tx_descs[idx];
+        let buf = &self.tx_bufs[idx];
+        if desc.is_owned() {
+            return Err(Error::Exhausted);
         }
 
-        // mark the required descriptors as temporarily unavailable
-        // this will get "cleared" on TxBuffer::drop, but is necessary so that we
-        // do not hand out the same buffers on subsequent transmits
-        for i in idx..last_idx {
-            self.tx_descs[i % bufs].set_tx_buf_len(0);
-        }
-
-        let tx_desc = &mut self.tx_descs[idx];
-        tx_desc.set_tx_buf(&self.tx_bufs[idx][..length]);
-        self.tx_next = last_idx;
-        Ok(TxBuffer(&mut self.tx_descs[..] as *mut _, idx))
+        assert!(length <= buf.len());
+        self.tx_next += 1;
+        desc.set_tx_buf(&buf[..length]);
+        Ok(TxBuffer(desc as *mut _))
     }
 }
 
@@ -537,6 +536,7 @@ fn irq_eth() {
     unsafe {
         let eth_dma = &*board::imp::ETHERNET_DMA.get();
 
+        // mark the interrupt cause as "resolved" (tell that we handled all causes)
         eth_dma.dmasr.write(|w| w.bits(0).nis().set_bit()
                                   .ais().set_bit()
                                   .rbus().set_bit()
@@ -552,7 +552,8 @@ pub fn main() {
         board::imp::rcc::init(cs, &RCC_CONFIG);
         setup_gpio(cs);
         unsafe {
-            // TODO
+            // TODO: this sets up TIM2 to provide a ms-tick 
+            //       (move to ethmac/replace with other sysclock setup, required for lan8720)
             let rcc = board::imp::RCC.borrow(cs);
             let eth_mac = board::imp::ETHERNET_MAC.borrow(cs);
 
@@ -566,6 +567,7 @@ pub fn main() {
         board::imp::ethmac::init(cs);
     });
 
+    // setup TCP stack for local test case
     let mut protocol_addrs = [IpAddress::v4(192, 168, 0, 177)];
     let mut arp_cache_entries: [_; 8] = Default::default();
     let mut arp_cache = SliceArpCache::new(&mut arp_cache_entries[..]);
@@ -597,19 +599,15 @@ pub fn main() {
         udp_socket.send_slice(&[0xde, 0xad, 0xbe, 0xef], endpoint).unwrap();
     }
 
-    // blinker poll (TODO: interrupt triggered)
+    // loop and poll and blink (TODO: interrupt triggered)
     let mut prev = false;
     loop {
-        /*let tim2 = ::board::imp::TIM2.borrow(&cs);
-        let old = tim2.cnt.read().bits();
-        while tim2.cnt.read().bits().saturating_sub(old) < 100000 {}*/
         GpioPin::LED_Y.set_enabled(&cs, !prev);
         prev = !prev;
         
-        // do a single poll & hope that's already enough
         let ret = iface.poll(&mut socket_set, 666);
         match ret {
-            Ok(()) | Err(Error::Exhausted) | Err(Error::Unrecognized) => (),
+            Ok(_) | Err(Error::Exhausted) | Err(Error::Unrecognized) => (),
             Err(e) => panic!("poll error: {}", e),
         }
     }
