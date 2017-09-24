@@ -19,3 +19,40 @@ xargo board flexperiment_mini doc -p stm32f439x --open --no-deps
 
 # TODO
 - CARGO_TARGET_DIR is not quite optimal (cargo-board)
+
+# Overview
+This should illustrate the basic outline of this tree.  
+Some of the described organization might not be implemented at all (e.g. HAL).  
+
+* apps
+  * Contains the application logic  
+    (e.g. a http-server which can run on board X and Y)
+* boards
+  * Contains a set of predefined "boards", which depend on the required hardware modules  
+    (e.g. on the mcu_stm32XY crate)
+* hal
+  * A generic abstraction over common hardware elements  
+    (e.g. GpioPin which is then implemented for the GpioPin of a specific stm32)  
+    This only provides the abstractions (mostly traits). The implementation happens
+    in the relevant hardwaremodule (e.g. mcu_stm32XY)
+    Not much to see yet. The idea is to write board-independant code.
+* mcu
+  * Contains a set of supported MCUs and provides specific implementations for them.  
+    e.g. `Stm32GpioPin::specific_function()` aswell as  
+    the implementation for the HAL  
+    e.g. `impl GpioPin for Stm32GpioPin { fn set_enabled() { ... }}`
+
+# Module Architecture/Crate Organization
+This illustrates the connections between the crates
+
+```
+[application XY] --> [board] (/board.rs)  
+                        ---> [hal] (/hal)            ; use abstractions/traits in application
+                        -
+                        ---> [board_XY] (/boards/XY) ; board selection
+                        ---> [board_ZZ] (/boards/ZZ) ; board selection
+                                -
+                                ---> [hal] (/hal)    ; implement general traits
+                                ---> [mcu_stm32f0xx] (/mcu/stm32f2xx)
+                                          ---> ... implementation details
+```
