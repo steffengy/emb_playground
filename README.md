@@ -20,25 +20,36 @@ Some of the described organization might not be implemented at all (e.g. HAL).
   * Contains a set of supported MCUs and provides specific implementations for them.  
     e.g. `Stm32GpioPin::specific_function()` aswell as  
     the implementation for the HAL  
-    e.g. `impl GpioPin for Stm32GpioPin { fn set_enabled() { ... }}`
+    e.g. `impl GpioPin for Stm32GpioPin { fn set_enabled() { ... }}`  
+    or even export implementation details (such as svd2rust generated register abstractions)
 
 # Module Architecture/Crate Organization
 This illustrates the connections between the crates
 
 ```
 [application XY] --> [board] (/board.rs)  
-                        ---> [hal] (/hal)            ; use abstractions/traits in application
+                        ---> [hal] (/hal)            ; use HAL-abstractions/traits in application
                         -
                         ---> [board_XY] (/boards/XY) ; board selection
                         ---> [board_ZZ] (/boards/ZZ) ; board selection
                                 -
-                                ---> [hal] (/hal)    ; implement general traits
+                                ---> [hal] (/hal)    ; implement general traits defined in HAL
                                 ---> [mcu_stm32f0xx] (/mcu/stm32f2xx)
                                           ---> ... implementation details
 ```
 
+# Board Selection
+Board Selection is based on [cargo-board](https://github.com/steffengy/cargo-board) and configured through [/boards.toml](/boards.toml).  
+Hardware-specific code such as MCU initialization is pulled in (or implemented by) the specific board crate.  
 
-# Installing some dependencies
+Cargo-Board is a wrapper for cargo which translates the board selection into   
+a feature (board_XY) and target (armeabi_XY) selection.  
+This allows you to comfortably run:
+```
+cargo board netboard build -p [name_of_application_crate]
+```
+
+# Setup: Installing required dependencies
 ```
 cargo install xargo
 cargo install svd2rust
@@ -46,7 +57,7 @@ cargo install rustfmt
 cargo install cargo-board
 ```
 
-# Generating hardware definitions from SVDs (see mcu/[target]/peripherals)
+# Setup: Generating hardware definitions from SVDs (see mcu/[target]/peripherals)
 ```
 svd2rust -i mcu/stm32f20x/peripherals/STM32F439x.svd | rustfmt | tee mcu/stm32f20x/peripherals/lib.rs
 svd2rust -i mcu/stm32f0xx/peripherals/STM32F0xx.svd | rustfmt | tee mcu/stm32f0xx/peripherlas/lib.rs
